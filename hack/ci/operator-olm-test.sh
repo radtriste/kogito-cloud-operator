@@ -20,7 +20,7 @@ source ./hack/export-version.sh
 default_cluster_name="operator-test"
 
 cluster_type=$1
-container_engine="docker"
+container_engine="podman"
 container_extra_args=""
 CATALOG_IMAGE="operatorhubio-catalog:temp"
 if [[ "${cluster_type}" = "openshift" ]]; then
