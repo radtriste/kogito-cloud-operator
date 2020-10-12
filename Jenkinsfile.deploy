@@ -141,131 +141,131 @@ pipeline {
                 }
             }
         }
-        stage('Build Kogito CLI') {
-            steps {
-                sh 'make build-cli'
-            }
-            post {
-                success {
-                    script {
-                        archiveArtifacts artifacts: "build/_output/bin/kogito", allowEmptyArchive: false
-                    }
-                }
-            }
-        }
+        // stage('Build Kogito CLI') {
+        //     steps {
+        //         sh 'make build-cli'
+        //     }
+        //     post {
+        //         success {
+        //             script {
+        //                 archiveArtifacts artifacts: "build/_output/bin/kogito", allowEmptyArchive: false
+        //             }
+        //         }
+        //     }
+        // }
 
-        stage('Push Operator Image to Openshift Registry') {
-            steps {
-                loginOpenshiftRegistry()
-                sh """
-                    podman tag quay.io/kiegroup/${OPERATOR_IMAGE_NAME}:${getOperatorVersion()} ${buildTempOpenshiftImageFullName()}
-                    podman push --tls-verify=false ${buildTempOpenshiftImageFullName()}
-                """
-            }
-        }
+        // stage('Push Operator Image to Openshift Registry') {
+        //     steps {
+        //         loginOpenshiftRegistry()
+        //         sh """
+        //             podman tag quay.io/kiegroup/${OPERATOR_IMAGE_NAME}:${getOperatorVersion()} ${buildTempOpenshiftImageFullName()}
+        //             podman push --tls-verify=false ${buildTempOpenshiftImageFullName()}
+        //         """
+        //     }
+        // }
 
-        stage('Build examples images for testing'){
-            when {
-                expression {
-                    return shouldLaunchTests()
-                }
-            }
-            steps {
-                script {
-                    // Need to login to Openshift Registry for application images to be pushed
-                    loginOpenshiftRegistry()
-                    // Needed for the native builds (see comment below)
-                    loginDockerToOpenshiftRegistry()
+        // stage('Build examples images for testing'){
+        //     when {
+        //         expression {
+        //             return shouldLaunchTests()
+        //         }
+        //     }
+        //     steps {
+        //         script {
+        //             // Need to login to Openshift Registry for application images to be pushed
+        //             loginOpenshiftRegistry()
+        //             // Needed for the native builds (see comment below)
+        //             loginDockerToOpenshiftRegistry()
 
-                    try {
-                        // Use docker because of https://issues.redhat.com/browse/KOGITO-3512
-                        sh "make build-examples-images tags='~@native' concurrent=3 ${getBDDParameters('never', false, 'docker')}"
-                    } catch(err) {
-                        unstable("Error building non-native examples' images. Check the junit results.")
-                    }
+        //             try {
+        //                 // Use docker because of https://issues.redhat.com/browse/KOGITO-3512
+        //                 sh "make build-examples-images tags='~@native' concurrent=3 ${getBDDParameters('never', false, 'docker')}"
+        //             } catch(err) {
+        //                 unstable("Error building non-native examples' images. Check the junit results.")
+        //             }
                     
-                    try {
-                        // Optaplanner taking a lot of resources, we should not build in parallel
-                        // There seems to be a problem with podman executed from the BDD tests ... Using docker instead for now ...
-                        sh "make build-examples-images tags='@native' concurrent=1 ${getBDDParameters('never', false, 'docker')}"
-                    } catch(err) {
-                        unstable("Error building native examples' images. Check the junit results.")
-                    }
-                }
-            }
-            post {
-                always {
-                    archiveArtifacts artifacts: 'test/logs/*/error */*.log', allowEmptyArchive: true
-                    junit testResults: 'test/logs/**/junit.xml', allowEmptyResults: true
-                }
-            }
-        }
+        //             try {
+        //                 // Optaplanner taking a lot of resources, we should not build in parallel
+        //                 // There seems to be a problem with podman executed from the BDD tests ... Using docker instead for now ...
+        //                 sh "make build-examples-images tags='@native' concurrent=1 ${getBDDParameters('never', false, 'docker')}"
+        //             } catch(err) {
+        //                 unstable("Error building native examples' images. Check the junit results.")
+        //             }
+        //         }
+        //     }
+        //     post {
+        //         always {
+        //             archiveArtifacts artifacts: 'test/logs/*/error */*.log', allowEmptyArchive: true
+        //             junit testResults: 'test/logs/**/junit.xml', allowEmptyResults: true
+        //         }
+        //     }
+        // }
 
-        stage('Run Full Testing') {
-            when {
-                expression { return shouldLaunchTests() }
-            }
-            steps {
-                script {
-                    // Catch and set unstable so the temp image is still pushed and we get the deployment properties, 
-                    // in case we decide to continue in the release
-                    try {
-                        // Use docker because of https://issues.redhat.com/browse/KOGITO-3512
-                        sh "make run-tests timeout=360 load_factor=3 concurrent=3 smoke=${params.SMOKE_TESTS_ONLY} ${getBDDParameters('always', true, 'docker')}"
-                    } catch(err) {
-                        unstable("Tests are failing")
-                    }
-                }
-            }
-            post {
-                always {
-                    archiveArtifacts artifacts: 'test/logs/*/error */*.log', allowEmptyArchive: true
-                    junit testResults: 'test/logs/**/junit.xml', allowEmptyResults: true
-                    sh 'cd test && go run scripts/prune_namespaces.go'
-                }
-            }
-        }
+        // stage('Run Full Testing') {
+        //     when {
+        //         expression { return shouldLaunchTests() }
+        //     }
+        //     steps {
+        //         script {
+        //             // Catch and set unstable so the temp image is still pushed and we get the deployment properties, 
+        //             // in case we decide to continue in the release
+        //             try {
+        //                 // Use docker because of https://issues.redhat.com/browse/KOGITO-3512
+        //                 sh "make run-tests timeout=360 load_factor=3 concurrent=3 smoke=${params.SMOKE_TESTS_ONLY} ${getBDDParameters('always', true, 'docker')}"
+        //             } catch(err) {
+        //                 unstable("Tests are failing")
+        //             }
+        //         }
+        //     }
+        //     post {
+        //         always {
+        //             archiveArtifacts artifacts: 'test/logs/*/error */*.log', allowEmptyArchive: true
+        //             junit testResults: 'test/logs/**/junit.xml', allowEmptyResults: true
+        //             sh 'cd test && go run scripts/prune_namespaces.go'
+        //         }
+        //     }
+        // }
 
-        stage('Push to registry') {
-            steps {
-                script {
-                    if (isDeployImageInOpenshiftRegistry()) {
-                        loginOpenshiftRegistry()
-                    } else if (getDeployImageRegistryCredentials() != ''){
-                        loginContainerRegistry(getDeployImageRegistry(), getDeployImageRegistryCredentials())
-                    }
-                    tagImage()
-                    pushImage()
+        // stage('Push to registry') {
+        //     steps {
+        //         script {
+        //             if (isDeployImageInOpenshiftRegistry()) {
+        //                 loginOpenshiftRegistry()
+        //             } else if (getDeployImageRegistryCredentials() != ''){
+        //                 loginContainerRegistry(getDeployImageRegistry(), getDeployImageRegistryCredentials())
+        //             }
+        //             tagImage()
+        //             pushImage()
 
-                    // Store image deployment information
-                    String imgPrefix = 'kogito-cloud-operator.image'
-                    setDeployPropertyIfNeeded("${imgPrefix}.registry", getDeployImageRegistry())
-                    setDeployPropertyIfNeeded("${imgPrefix}.namespace", getDeployImageNamespace())
-                    setDeployPropertyIfNeeded("${imgPrefix}.name-suffix", getDeployImageNameSuffix())
-                    setDeployPropertyIfNeeded("${imgPrefix}.tag", getDeployImageTag())
-                }
-            }
-        }
+        //             // Store image deployment information
+        //             String imgPrefix = 'kogito-cloud-operator.image'
+        //             setDeployPropertyIfNeeded("${imgPrefix}.registry", getDeployImageRegistry())
+        //             setDeployPropertyIfNeeded("${imgPrefix}.namespace", getDeployImageNamespace())
+        //             setDeployPropertyIfNeeded("${imgPrefix}.name-suffix", getDeployImageNameSuffix())
+        //             setDeployPropertyIfNeeded("${imgPrefix}.tag", getDeployImageTag())
+        //         }
+        //     }
+        // }
 
-        stage('Create PR'){
-            when {
-                expression { return isRelease() }
-            }
-            steps {
-                script {
-                    String commitMsg = "Update project version to ${getProjectVersion()} for release"
-                    def prBody = "Generated by build ${BUILD_TAG}: ${BUILD_URL}.\nPlease do not merge, it will be merged automatically after testing."
-                    githubscm.commitChanges(commitMsg, '.')
-                    githubscm.pushObject('origin', getBotBranch(), getBotAuthorCredsID())
-                    deployProperties['kogito-cloud-operator.pr.link'] = githubscm.createPR(commitMsg, prBody, getBuildBranch(), getBotAuthorCredsID())
+        // stage('Create PR'){
+        //     when {
+        //         expression { return isRelease() }
+        //     }
+        //     steps {
+        //         script {
+        //             String commitMsg = "Update project version to ${getProjectVersion()} for release"
+        //             def prBody = "Generated by build ${BUILD_TAG}: ${BUILD_URL}.\nPlease do not merge, it will be merged automatically after testing."
+        //             githubscm.commitChanges(commitMsg, '.')
+        //             githubscm.pushObject('origin', getBotBranch(), getBotAuthorCredsID())
+        //             deployProperties['kogito-cloud-operator.pr.link'] = githubscm.createPR(commitMsg, prBody, getBuildBranch(), getBotAuthorCredsID())
                     
-                    setDeployPropertyIfNeeded('kogito-cloud-operator.pr.source.uri', "https://github.com/${getBotAuthor()}/kogito-cloud-operator")
-                    setDeployPropertyIfNeeded('kogito-cloud-operator.pr.source.ref', getBotBranch())
-                    setDeployPropertyIfNeeded('kogito-cloud-operator.pr.target.uri', "https://github.com/${getGitAuthor()}/kogito-cloud-operator")
-                    setDeployPropertyIfNeeded('kogito-cloud-operator.pr.target.ref', getBuildBranch())
-                }
-            }
-        }
+        //             setDeployPropertyIfNeeded('kogito-cloud-operator.pr.source.uri', "https://github.com/${getBotAuthor()}/kogito-cloud-operator")
+        //             setDeployPropertyIfNeeded('kogito-cloud-operator.pr.source.ref', getBotBranch())
+        //             setDeployPropertyIfNeeded('kogito-cloud-operator.pr.target.uri', "https://github.com/${getGitAuthor()}/kogito-cloud-operator")
+        //             setDeployPropertyIfNeeded('kogito-cloud-operator.pr.target.ref', getBuildBranch())
+        //         }
+        //     }
+        // }
     }
     post {
         always {
