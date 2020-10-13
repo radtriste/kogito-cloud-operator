@@ -136,7 +136,8 @@ pipeline {
                 script {
                     loginOpenshift()
                     
-                    sh(script: "./hack/generate-manifests.sh", label: "Generate Manifests")
+                    sh(script: "sed -i 's|image:.*|image: ${OPENSHIFT_INTERNAL_REGISTRY}/openshift/kogito-cloud-operator:${getOperatorVersion()}|g' deploy/operator.yaml", label: "Update version")
+                    sh(script: "make vet", label: "Generate Manifests")
                     sh(script: "./hack/ci/operator-olm-test.sh openshift", label: "Run Operator OLM Integration Test")
                 }
             }

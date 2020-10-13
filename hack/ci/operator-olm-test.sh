@@ -23,6 +23,15 @@ cluster_type=$1
 container_engine="podman"
 container_extra_args=""
 CATALOG_IMAGE="operatorhubio-catalog:temp"
+INTERNAL_CATALOG_IMAGE="operatorhubio-catalog:temp"
+
+OP_PATH="community-operators/kogito-operator"
+INSTALL_MODE="SingleNamespace"
+OPERATOR_TESTING_IMAGE="quay.io/operator-framework/operator-testing:latest"
+NO_KIND=0
+
+OPENSHIFT_INTERNAL_REGISTRY="image-registry.openshift-image-registry.svc:5000"
+
 if [[ "${cluster_type}" = "openshift" ]]; then
     which oc > /dev/null || (echo "oc is not installed. Please install it before proceeding. Exiting...." && exit 1)
     which podman > /dev/null || (echo "podman is not installed. Please install it before proceeding. Exiting...." && exit 1)
@@ -33,7 +42,10 @@ if [[ "${cluster_type}" = "openshift" ]]; then
 
     container_engine="podman"
     container_extra_args="--tls-verify=false"
+
     CATALOG_IMAGE="${OPENSHIFT_REGISTRY}/openshift/${CATALOG_IMAGE}"
+    INTERNAL_CATALOG_IMAGE="${OPENSHIFT_INTERNAL_REGISTRY}/openshift/${INTERNAL_CATALOG_IMAGE}"
+    NO_KIND=1
 else
     which docker > /dev/null || (echo "docker is not installed. Please install it before proceeding. Exiting...." && exit 1)
     which kind > /dev/null || (echo "kind is not installed. Please install it before proceeding. Exiting...." && exit 1)
@@ -44,10 +56,6 @@ else
     cluster_type="kind"
 fi
 
-OP_PATH="community-operators/kogito-operator"
-INSTALL_MODE="SingleNamespace"
-OPERATOR_TESTING_IMAGE="quay.io/operator-framework/operator-testing:latest"
-
 if [ -z ${KUBECONFIG} ]; then
     KUBECONFIG=${HOME}/.kube/config
     echo "---> KUBECONFIG environment variable not set, defining to:"
@@ -56,8 +64,6 @@ fi
 
 echo "---> Loading Operator Image into ${cluster_type}"
 if [[ "${cluster_type}" = "openshift" ]]; then
-    sed -i "s|image:.*|image: image-registry.openshift-image-registry.svc:5000/openshift/kogito-cloud-operator:${OP_VERSION}|g" deploy/operator.yaml
-    ./hack/generate-manifests.sh
     echo "${container_engine} login -u anything -p $(oc whoami -t) ${container_extra_args} ${OPENSHIFT_REGISTRY}"
     ${container_engine} login -u anything -p $(oc whoami -t) ${container_extra_args} ${OPENSHIFT_REGISTRY}
     echo "${container_engine} tag quay.io/kiegroup/kogito-cloud-operator:\"${OP_VERSION}\" \"${OPENSHIFT_REGISTRY}/openshift/kogito-cloud-operator:${OP_VERSION}\""
@@ -76,18 +82,30 @@ find "${OUTPUT}/kogito-operator/" -name '*.clusterserviceversion.yaml' -type f -
 echo "---> Resulting imagePullPolicy on manifest files"
 grep -rn imagePullPolicy ${OUTPUT}/kogito-operator
 echo "---> Building temporary catalog Image"
-${container_engine} build --build-arg PERMISSIVE_LOAD=false -f ./hack/ci/operatorhubio-catalog.Dockerfile -t ${CATALOG_IMAGE} .
+${container_engine} build --no-cache --build-arg PERMISSIVE_LOAD=false -f ./hack/ci/operatorhubio-catalog.Dockerfile -t ${CATALOG_IMAGE} .
 echo "---> Loading Catalog Image into ${cluster_type}"
 if [[ "${cluster_type}" = "openshift" ]]; then
+    echo "${container_engine} push ${container_extra_args} ${CATALOG_IMAGE}"
     ${container_engine} push ${container_extra_args} ${CATALOG_IMAGE}
 else 
     kind load docker-image ${CATALOG_IMAGE} --name ${CLUSTER_NAME}
 fi
 
-# running tests
+echo "---> Run tests"
 ${container_engine} pull ${OPERATOR_TESTING_IMAGE}
+
+echo "${container_engine} run --network=host --rm \
+    -v ${KUBECONFIG}:/root/.kube/config:z \
+    -v ${OUTPUT}/:/community-operators:z \
+    --env CATALOG_IMAGE=${INTERNAL_CATALOG_IMAGE} \
+    ${OPERATOR_TESTING_IMAGE} \
+    operator.test --no-print-directory \
+    OP_PATH=${OP_PATH} VERBOSE=true NO_KIND=${NO_KIND} INSTALL_MODE=${INSTALL_MODE}"
+
 ${container_engine} run --network=host --rm \
     -v ${KUBECONFIG}:/root/.kube/config:z \
-    -v ${OUTPUT}/:/community-operators:z ${OPERATOR_TESTING_IMAGE} \
+    -v ${OUTPUT}/:/community-operators:z \
+    --env CATALOG_IMAGE=${INTERNAL_CATALOG_IMAGE} \
+    ${OPERATOR_TESTING_IMAGE} \
     operator.test --no-print-directory \
-    OP_PATH=${OP_PATH} VERBOSE=true NO_KIND=0 CATALOG_IMAGE=${CATALOG_IMAGE} INSTALL_MODE=${INSTALL_MODE}
+    OP_PATH=${OP_PATH} VERBOSE=true NO_KIND=${NO_KIND} INSTALL_MODE=${INSTALL_MODE}

@@ -17,7 +17,7 @@ spec:
       serviceAccountName: kogito-operator
       containers:
         - name: kogito-cloud-operator
-          image: quay.io/kiegroup/kogito-cloud-operator:1.0.0-snapshot
+          image: image-registry.openshift-image-registry.svc:5000/openshift/kogito-cloud-operator:1.0.0-snapshot
           command:
             - kogito-cloud-operator
           imagePullPolicy: Always
